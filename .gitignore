@@ -1,0 +1,19 @@
+# Системные файлы
+.DS_Store
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Виртуальное окружение
+venv/
+env/
+.env
+
+# Логи
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo 
