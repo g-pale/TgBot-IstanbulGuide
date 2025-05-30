@@ -2,13 +2,17 @@ import os
 import sys
 import logging
 import tempfile
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import yaml
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from openai import OpenAI
 from dotenv import load_dotenv
 import requests
 import re
 from collections import defaultdict, deque
+
+# Глобальная переменная для базы
+ISTANBUL_DATA = {}
 
 load_dotenv()  # Загружает переменные из .env в окружение
 
@@ -41,36 +45,65 @@ client = OpenAI(
     }
 )
 
-PROMPT_TEMPLATE = '''
-Ты — экспертный Telegram-бот, который отвечает на запросы пользователя чётко и структурировано. 
-Всегда используй следующую разметку:
+# Шаблон для режима "Гид по Стамбулу"
+PROMPT_TEMPLATE_ISTANBUL = """
+Ты — надёжный Telegram-бот-гид по Стамбулу. Ты помогаешь туристам получить достоверную и полезную информацию по городу. Никогда не выдумывай факты — только реальные места, рестораны, районы и маршруты.
 
-– Краткая вводная фраза.
+Отвечай чётко, структурировано и в одном сообщении. Не повторяй одни и те же пункты. Указывай конкретные локации и маршруты. Не добавляй общее вступление вроде "Конечно, вот маршрут...".
 
-1. Название первого раздела
+Формат:
 
-Текст первого раздела.
+1. Утро  
+2. Обед  
+3. День  
+4. Вечер  
 
-2. Название второго раздела
+💡 Совет в конце.
 
-Текст второго раздела.
+Не повторяй ответ дважды. Ответ должен быть один, краткий и полезный.
+""".strip()
 
-3. Название третьего раздела
+# Шаблон для составления маршрута
+PROMPT_TEMPLATE_ROUTE = """
+Ты — опытный Telegram-гид по Стамбулу. Пользователь просит составить маршрут на 1 день.
 
-Текст третьего раздела.
+Составь **логичный и реалистичный маршрут по городу**, учитывая географию, расстояния и время суток.
 
-…и так далее.
+**Формат ответа:**
 
-При необходимости внутри раздела добавляй ненумерованные подзаголовки (раздели их пустыми строками).
+1. Утро (Султанахмет)  
+– Айя-София  
+– Голубая мечеть  
+– Прогулка по Гипподрому  
 
-В конце можно добавить совет в формате:
-💡 Совет: …
+2. Обед  
+– Конкретное кафе/локанта рядом (вкусно и недорого)  
 
-Вопрос пользователя:
-{question}
+3. Послеобеденное время (Эминоню → Галата)  
+– Гранд-базар или Египетский рынок  
+– Прогулка до Галатской башни  
+– Кофе с видом
 
-Ответ бота:
-'''
+4. Вечер (Таксим или Босфор)  
+– Ужин с видом  
+– Паром или набережная  
+– Альтернативный вечер: улица Истикляль
+
+💡 Совет: Добавь практичный совет (транспорт, Istanbulkart, лайфхак по очередям).
+
+**Важно:** Не просто перечисляй места. Привяжи их ко времени суток и маршруту. Упоминай трамвай T1, паромы, районы. Ответ — один, без повторов.
+""".strip()
+
+# Шаблон для обычных ответов
+DEFAULT_PROMPT_TEMPLATE = """
+Ты — умный и краткий Telegram-бот. Отвечай на вопросы пользователей чётко, структурировано и по делу.
+
+Если вопрос относится к прошлому диалогу — обязательно учитывай контекст.
+
+Структурируй ответ в разделы **только если это уместно**, но не жертвуй фактами ради формы.
+
+💡 В конце можешь добавить совет или интересный факт.
+""".strip()
 
 OPENWEATHER_API_KEY = "79b333a6fa52cf366d5437b7ecff03c3"
 
@@ -232,17 +265,33 @@ def extract_city(raw_city):
     return raw_city.strip()
 
 def format_gpt_answer(text):
-    # Удалить все * кроме жирных пунктов
-    text = re.sub(r'(?<!\*)\*+', '', text)
-    # Добавить перенос строки после жирного пункта, если его нет
-    text = re.sub(r'(\*\*\d+\. [^\n]*)', r'\1\n', text)
-    # Разбить подпункты (например, 1.1 ...) на отдельные строки
-    text = re.sub(r'(\d+\.\d+ )', r'\n\1', text)
-    # Убрать лишние пробелы и пустые строки
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    # Убрать пробелы в начале строк
-    text = re.sub(r'\n +', '\n', text)
-    return text.strip()
+    """
+    Форматирует ответ бота, добавляя HTML-разметку для режима "Гид по Стамбулу"
+    и Markdown для обычных ответов.
+    """
+    # Удаляем лишние пробелы и переносы строк
+    text = re.sub(r'\n{3,}', '\n\n', text.strip())
+    
+    # Форматируем заголовки разделов
+    text = re.sub(r'^(\d+\.\s+[^\n]+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    
+    # Форматируем подзаголовки
+    text = re.sub(r'^([^\n]+)$', r'<i>\1</i>', text, flags=re.MULTILINE)
+    
+    # Форматируем советы
+    text = re.sub(r'💡\s+Совет:\s+([^\n]+)', r'💡 <b>Совет:</b> \1', text)
+    
+    # Добавляем эмодзи для разделов
+    text = re.sub(r'<b>1\.\s+Основные достопримечательности</b>', 
+                 r'<b>1. 🏛 Основные достопримечательности</b>', text)
+    text = re.sub(r'<b>2\.\s+Что посмотреть в первую очередь</b>', 
+                 r'<b>2. 🗺 Что посмотреть в первую очередь</b>', text)
+    text = re.sub(r'<b>3\.\s+Вкусная и недорогая еда</b>', 
+                 r'<b>3. 🍽 Вкусная и недорогая еда</b>', text)
+    text = re.sub(r'<b>4\.\s+Полезные советы</b>', 
+                 r'<b>4. 💡 Полезные советы</b>', text)
+    
+    return text
 
 def fix_markdown(text):
     # Закрыть незакрытые **
@@ -269,15 +318,201 @@ def clean_answer(text):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    menu_keyboard = [
-        [KeyboardButton("📄 Новый диалог"), KeyboardButton("ℹ️ Помощь")],
-        [KeyboardButton("⚙️ Настройки"), KeyboardButton("📝 О боте")]
+    keyboard = [
+        [
+            InlineKeyboardButton("🗺 Маршруты", callback_data="routes"),
+            InlineKeyboardButton("🏛 Достопримечательности", callback_data="sights")
+        ],
+        [
+            InlineKeyboardButton("🍽 Рестораны", callback_data="restaurants"),
+            InlineKeyboardButton("ℹ️ Помощь", callback_data="help")
+        ]
     ]
-    reply_markup = ReplyKeyboardMarkup(menu_keyboard, resize_keyboard=True)
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        f"Привет, {user.first_name}! Я бот OpenRouterGPT.",
+        f"Привет, {user.first_name}! Я бот-гид по Стамбулу. Выберите, что вас интересует:",
         reply_markup=reply_markup
     )
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "routes":
+        keyboard = [
+            [
+                InlineKeyboardButton("1 день", callback_data="route_1"),
+                InlineKeyboardButton("2 дня", callback_data="route_2"),
+                InlineKeyboardButton("3 дня", callback_data="route_3")
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Выберите длительность маршрута:",
+            reply_markup=reply_markup
+        )
+
+    elif query.data == "sights":
+        keyboard = [
+            [
+                InlineKeyboardButton("Султанахмет", callback_data="sights_Султанахмет"),
+                InlineKeyboardButton("Галата", callback_data="sights_Галата")
+            ],
+            [
+                InlineKeyboardButton("Беязит", callback_data="sights_Беязит"),
+                InlineKeyboardButton("Бешикташ", callback_data="sights_Бешикташ")
+            ],
+            [
+                InlineKeyboardButton("Вефа", callback_data="sights_Вефа"),
+                InlineKeyboardButton("Эминоню", callback_data="sights_Эминоню")
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Выберите район для просмотра достопримечательностей:",
+            reply_markup=reply_markup
+        )
+
+    elif query.data == "restaurants":
+        keyboard = [
+            [
+                InlineKeyboardButton("Султанахмет", callback_data="eat_Султанахмет"),
+                InlineKeyboardButton("Бейоглу", callback_data="eat_Бейоглу")
+            ],
+            [
+                InlineKeyboardButton("Каракёй", callback_data="eat_Каракёй"),
+                InlineKeyboardButton("Эминоню", callback_data="eat_Эминоню")
+            ],
+            [
+                InlineKeyboardButton("Кадыкёй", callback_data="eat_Кадыкёй"),
+                InlineKeyboardButton("Нишанташи", callback_data="eat_Нишанташи")
+            ],
+            [
+                InlineKeyboardButton("Бешикташ", callback_data="eat_Бешикташ")
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Выберите район для просмотра ресторанов:",
+            reply_markup=reply_markup
+        )
+
+    elif query.data == "help":
+        keyboard = [[InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Я понимаю команды:\n"
+            "/start - Запустить бота\n"
+            "/help - Показать справку\n"
+            "/route - Показать маршрут на 1 день\n"
+            "/sights <район> - Показать достопримечательности в районе\n"
+            "/eat <район> - Показать рестораны в районе\n\n"
+            "Также вы можете использовать кнопки меню для навигации.",
+            reply_markup=reply_markup
+        )
+
+    elif query.data == "back_to_main":
+        keyboard = [
+            [
+                InlineKeyboardButton("🗺 Маршруты", callback_data="routes"),
+                InlineKeyboardButton("🏛 Достопримечательности", callback_data="sights")
+            ],
+            [
+                InlineKeyboardButton("🍽 Рестораны", callback_data="restaurants"),
+                InlineKeyboardButton("ℹ️ Помощь", callback_data="help")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Выберите, что вас интересует:",
+            reply_markup=reply_markup
+        )
+
+    elif query.data.startswith("route_"):
+        days = query.data.split("_")[1]
+        route = next((r for r in ISTANBUL_DATA.get("routes", []) 
+                     if r["title"] == f"Маршрут на {days} {'день' if days == '1' else 'дня' if days == '2' else 'дня'} по Стамбулу"), None)
+        
+        if not route:
+            await query.edit_message_text("Маршрут не найден.")
+            return
+
+        lines = [f"<b>{route['title']}</b>"]
+        for block in route["steps"]:
+            lines.append(f"\n<b>{block['time']}:</b>")
+            for act in block["activities"]:
+                lines.append(f"• {act}")
+        text = "\n".join(lines)
+
+        keyboard = [[InlineKeyboardButton("◀️ Назад к маршрутам", callback_data="routes")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+
+    elif query.data.startswith("sights_"):
+        district = query.data.split("_")[1]
+        results = [
+            sight for sight in ISTANBUL_DATA.get("sights", [])
+            if sight["district"].lower() == district.lower()
+        ]
+
+        if not results:
+            await query.edit_message_text(f"В районе {district} ничего не найдено.")
+            return
+
+        lines = [f"<b>🏛 Достопримечательности в районе {district}:</b>\n"]
+        for s in results:
+            lines.append(
+                f"• <b>{s['name']}</b>\n"
+                f"  {s['description']}\n"
+                f"  🕒 {s['opening_hours']}\n"
+                f"  💰 {s['price']}\n"
+                f"  🚇 {s['transport']}\n"
+            )
+
+        keyboard = [[InlineKeyboardButton("◀️ Назад к районам", callback_data="sights")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
+
+    elif query.data.startswith("eat_"):
+        district = query.data.split("_")[1]
+        results = [
+            restaurant for restaurant in ISTANBUL_DATA.get("restaurants", [])
+            if restaurant["district"].lower() == district.lower()
+        ]
+
+        if not results:
+            await query.edit_message_text(f"В районе {district} ничего не найдено.")
+            return
+
+        lines = [f"<b>🍽 Рестораны в районе {district}:</b>\n"]
+        for r in results:
+            lines.append(
+                f"• <b>{r['name']}</b>\n"
+                f"  🍳 {r['cuisine']}\n"
+                f"  💰 {r['price_level']}\n"
+                f"  {r['description']}\n"
+                f"  🕒 {r['opening_hours']}\n"
+                f"  📍 {r['address']}\n"
+                f"  🚇 {r['transport']}\n"
+                f"  #{' #'.join(r['tags'])}\n"
+            )
+
+        keyboard = [[InlineKeyboardButton("◀️ Назад к районам", callback_data="restaurants")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "\n".join(lines),
+            reply_markup=reply_markup,
+            parse_mode="HTML",
+            disable_web_page_preview=True
+        )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -290,6 +525,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     user_id = update.effective_user.id
+
     if text == "ℹ️ Помощь":
         await help_command(update, context)
         return
@@ -300,20 +536,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif text == "📄 Новый диалог":
         user_histories[user_id].clear()
-        await update.message.reply_text(
-            "Новый диалог начат! Можете задать свой вопрос."
-        )
+        await update.message.reply_text("Новый диалог начат! Можете задать свой вопрос.")
         return
     elif text == "⚙️ Настройки":
-        await update.message.reply_text(
-            "Настройки пока недоступны. В будущем здесь появятся дополнительные опции."
-        )
+        await update.message.reply_text("Настройки пока недоступны. В будущем здесь появятся дополнительные опции.")
         return
-    # Улучшенное регулярное выражение для извлечения города
+
+    # Проверка на запрос погоды
     match = re.search(r'(температура|погода|прогноз).*(в|по|для)\s*([а-яА-Яa-zA-Z\- ]+)', text, re.IGNORECASE)
     if match:
         city = normalize_city(extract_city(match.group(3)))
-        # Проверка на прогноз на 3 дня
         if re.search(r'(на\s*3\s*дня|на\s*три\s*дня|прогноз)', text, re.IGNORECASE):
             forecast = get_weather_forecast(city, days=3)
             if forecast:
@@ -327,56 +559,219 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Не удалось получить данные о погоде. Проверьте название города.")
         return
-    # --- Новый подход: история + мягкий промпт ---
-    user_question = text
-    user_histories[user_id].append({"role": "user", "content": user_question})
 
-    PROMPT_TEMPLATE = """
-Ты — умный и краткий Telegram-бот. Отвечай на вопросы пользователей чётко, структурировано и по делу.
+    # --- Определение промпта по ключевым словам ---
+    istanbul_keywords = ["стамбул", "istanbul", "гид по стамбулу", "маршрут", "турция", "что посмотреть"]
+    is_istanbul_related = any(kw in text.lower() for kw in istanbul_keywords)
+    
+    # Определяем, когда пользователь явно просит маршрут на 1 день
+    is_route_request = any(kw in text.lower() for kw in ["маршрут", "на день", "за 1 день", "в один день", "что успеть", "однодневный маршрут"])
 
-Если вопрос относится к прошлому диалогу — обязательно учитывай контекст.
+    if "стамбул" in text.lower() and is_route_request:
+        PROMPT = PROMPT_TEMPLATE_ROUTE
+    elif is_istanbul_related:
+        PROMPT = PROMPT_TEMPLATE_ISTANBUL
+    else:
+        PROMPT = DEFAULT_PROMPT_TEMPLATE
 
-Структурируй ответ в разделы **только если это уместно**, но не жертвуй фактами ради формы.
-
-💡 В конце можешь добавить совет или интересный факт.
-    """.strip()
-
-    messages = [{"role": "system", "content": PROMPT_TEMPLATE}]
-    messages.extend(user_histories[user_id])
+    user_histories[user_id].append({"role": "user", "content": text})
+    messages = [{"role": "system", "content": PROMPT}] + list(user_histories[user_id])
 
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-3.5-turbo-0613",
+            model="anthropic/claude-3-opus-20240229",
             messages=messages,
-            temperature=0.4,
-            max_tokens=1024,
+            temperature=0.7,
+            max_tokens=1000
         )
+
         if not response.choices:
-            logger.error(f"Пустой ответ от API: {response}")
             raise ValueError("GPT не вернул ответ")
 
         answer = response.choices[0].message.content.strip()
 
-        # Сохраняем ответ тоже в историю
+        # Защита от повторов: не отправлять один и тот же ответ подряд
+        if user_histories[user_id] and user_histories[user_id][-1]["role"] == "assistant":
+            last_answer = user_histories[user_id][-1]["content"].strip()
+            if answer == last_answer:
+                logger.warning("Ответ дублируется, не отправляется повторно.")
+                return
+
         user_histories[user_id].append({"role": "assistant", "content": answer})
 
-        await update.message.reply_text(
-            clean_answer(answer),
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+        # Форматируем ответ в зависимости от типа
+        if is_istanbul_related:
+            formatted_answer = format_gpt_answer(answer)
+            await update.message.reply_text(
+                formatted_answer,
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
+        else:
+            formatted_answer = format_gpt_answer(answer)
+            await update.message.reply_text(
+                formatted_answer,
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
 
     except Exception as e:
         logger.error(f"Ошибка при обращении к GPT: {e}", exc_info=True)
         await update.message.reply_text("⚠️ Произошла ошибка при обработке запроса.")
 
+async def route_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    title = "Маршрут на 1 день по Стамбулу"
+    route = next((r for r in ISTANBUL_DATA.get("routes", []) if r["title"] == title), None)
+
+    if not route:
+        await update.message.reply_text("Извините, маршрут не найден.")
+        return
+
+    lines = [f"<b>{title}</b>"]
+    for block in route["steps"]:
+        lines.append(f"\n<b>{block['time']}:</b>")
+        for act in block["activities"]:
+            lines.append(f"• {act}")
+    text = "\n".join(lines)
+
+    await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
+async def sights_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Укажите район: /sights Султанахмет\n\n"
+            "Доступные районы:\n"
+            "• Султанахмет\n"
+            "• Галата\n"
+            "• Беязит\n"
+            "• Бешикташ\n"
+            "• Вефа\n"
+            "• Эминоню"
+        )
+        return
+    
+    district = " ".join(args).strip().lower()
+    results = [
+        sight for sight in ISTANBUL_DATA.get("sights", [])
+        if sight["district"].lower() == district
+    ]
+
+    if not results:
+        await update.message.reply_text(
+            f"В районе {district.title()} ничего не найдено.\n"
+            "Попробуйте другой район из списка:\n"
+            "• Султанахмет\n"
+            "• Галата\n"
+            "• Беязит\n"
+            "• Бешикташ\n"
+            "• Вефа\n"
+            "• Эминоню"
+        )
+        return
+
+    lines = [f"<b>🏛 Достопримечательности в районе {district.title()}:</b>\n"]
+    for s in results:
+        lines.append(
+            f"• <b>{s['name']}</b>\n"
+            f"  {s['description']}\n"
+            f"  🕒 {s['opening_hours']}\n"
+            f"  💰 {s['price']}\n"
+            f"  🚇 {s['transport']}\n"
+        )
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
+
+async def eat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "Укажите район: /eat Султанахмет\n\n"
+            "Доступные районы:\n"
+            "• Султанахмет\n"
+            "• Бейоглу\n"
+            "• Каракёй\n"
+            "• Эминоню\n"
+            "• Кадыкёй\n"
+            "• Нишанташи\n"
+            "• Бешикташ"
+        )
+        return
+    
+    district = " ".join(args).strip().lower()
+    results = [
+        restaurant for restaurant in ISTANBUL_DATA.get("restaurants", [])
+        if restaurant["district"].lower() == district
+    ]
+
+    if not results:
+        await update.message.reply_text(
+            f"В районе {district.title()} ничего не найдено.\n"
+            "Попробуйте другой район из списка:\n"
+            "• Султанахмет\n"
+            "• Бейоглу\n"
+            "• Каракёй\n"
+            "• Эминоню\n"
+            "• Кадыкёй\n"
+            "• Нишанташи\n"
+            "• Бешикташ"
+        )
+        return
+
+    lines = [f"<b>🍽 Рестораны в районе {district.title()}:</b>\n"]
+    for r in results:
+        lines.append(
+            f"• <b>{r['name']}</b>\n"
+            f"  🍳 {r['cuisine']}\n"
+            f"  💰 {r['price_level']}\n"
+            f"  {r['description']}\n"
+            f"  🕒 {r['opening_hours']}\n"
+            f"  📍 {r['address']}\n"
+            f"  🚇 {r['transport']}\n"
+            f"  #{' #'.join(r['tags'])}\n"
+        )
+
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+        disable_web_page_preview=True
+    )
+
+def load_istanbul_data():
+    global ISTANBUL_DATA
+    try:
+        logger.info("Начинаю загрузку базы данных Стамбула...")
+        file_path = "istanbul_guide.yaml"
+        logger.info(f"Путь к файлу: {os.path.abspath(file_path)}")
+        with open(file_path, "r", encoding="utf-8") as f:
+            ISTANBUL_DATA = yaml.safe_load(f)
+            logger.info(f"База данных успешно загружена. Количество маршрутов: {len(ISTANBUL_DATA.get('routes', []))}")
+            logger.info(f"Доступные маршруты: {[r['title'] for r in ISTANBUL_DATA.get('routes', [])]}")
+    except FileNotFoundError:
+        logger.error(f"Файл {file_path} не найден!")
+        ISTANBUL_DATA = {}
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке базы данных: {e}")
+        ISTANBUL_DATA = {}
+
 def main() -> None:
+    # Загружаем базу данных при старте
+    load_istanbul_data()
+
     app = ApplicationBuilder()\
         .token(TOKEN)\
         .build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("route", route_command))
+    app.add_handler(CommandHandler("sights", sights_command))
+    app.add_handler(CommandHandler("eat", eat_command))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # <-- вот здесь сбрасываем pending updates
