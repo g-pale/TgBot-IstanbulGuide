@@ -579,7 +579,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         response = client.chat.completions.create(
-            model="anthropic/claude-3-opus-20240229",
+            model="openai/gpt-3.5-turbo-0613",
             messages=messages,
             temperature=0.7,
             max_tokens=1000
