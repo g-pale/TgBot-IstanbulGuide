@@ -128,6 +128,31 @@ def chunk_text(text: str, max_len: int = 1000):
         chunks.append(current.strip())
     return chunks
 
+def split_into_telegram_chunks(text: str, limit: int = 3500) -> list:
+    """
+    Безопасно делит длинный текст на части для Telegram (лимит ~4096 символов).
+    Деление выполняется по строкам, чтобы не ломать разметку Markdown/HTML.
+    """
+    parts = []
+    current_lines = []
+    current_len = 0
+
+    for line in text.split('\n'):
+        # +1 за перенос строки
+        additional = len(line) + 1
+        if current_len + additional > limit and current_lines:
+            parts.append('\n'.join(current_lines).strip())
+            current_lines = [line]
+            current_len = len(line) + 1
+        else:
+            current_lines.append(line)
+            current_len += additional
+
+    if current_lines:
+        parts.append('\n'.join(current_lines).strip())
+
+    return parts
+
 def city_locative(city):
     locative = {
         "Москва": "Москве",
@@ -596,21 +621,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         user_histories[user_id].append({"role": "assistant", "content": answer})
 
-        # Форматируем ответ в зависимости от типа
+        # Форматируем и отправляем ответ частями, чтобы Telegram не обрезал
         if is_istanbul_related:
             formatted_answer = format_gpt_answer(answer)
-            await update.message.reply_text(
-                formatted_answer,
-                parse_mode='HTML',
-                disable_web_page_preview=True
-            )
+            for part in split_into_telegram_chunks(formatted_answer, limit=3500):
+                await update.message.reply_text(
+                    part,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True
+                )
         else:
-            # Для обычных ответов — отправляем как Markdown, без HTML-преобразований
-            await update.message.reply_text(
-                answer,
-                parse_mode='Markdown',
-                disable_web_page_preview=True
-            )
+            for part in split_into_telegram_chunks(answer, limit=3500):
+                await update.message.reply_text(
+                    part,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True
+                )
 
     except Exception as e:
         logger.error(f"Ошибка при обращении к GPT: {e}", exc_info=True)
