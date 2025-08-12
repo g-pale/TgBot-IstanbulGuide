@@ -271,12 +271,8 @@ def format_gpt_answer(text):
     """
     # Удаляем лишние пробелы и переносы строк
     text = re.sub(r'\n{3,}', '\n\n', text.strip())
-    
-    # Форматируем заголовки разделов
-    text = re.sub(r'^(\d+\.\s+[^\n]+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
-    
-    # Форматируем подзаголовки
-    text = re.sub(r'^([^\n]+)$', r'<i>\1</i>', text, flags=re.MULTILINE)
+    # Жирные нумерованные заголовки вида "1. Утро"
+    text = re.sub(r'^(\s*\d+\.\s+[^\n]+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
     
     # Форматируем советы
     text = re.sub(r'💡\s+Совет:\s+([^\n]+)', r'💡 <b>Совет:</b> \1', text)
@@ -575,14 +571,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         PROMPT = DEFAULT_PROMPT_TEMPLATE
 
     user_histories[user_id].append({"role": "user", "content": text})
-    messages = [{"role": "system", "content": PROMPT}] + list(user_histories[user_id])
+    # Берём только последние 4 сообщения истории (2 вопроса и 2 ответа)
+    short_history = list(user_histories[user_id])[-4:]
+    messages = [{"role": "system", "content": PROMPT}] + short_history
 
     try:
         response = client.chat.completions.create(
             model="openai/gpt-3.5-turbo-0613",
             messages=messages,
             temperature=0.7,
-            max_tokens=1000
+            max_tokens=600
         )
 
         if not response.choices:
@@ -590,12 +588,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         answer = response.choices[0].message.content.strip()
 
-        # Защита от повторов: не отправлять один и тот же ответ подряд
-        if user_histories[user_id] and user_histories[user_id][-1]["role"] == "assistant":
-            last_answer = user_histories[user_id][-1]["content"].strip()
-            if answer == last_answer:
-                logger.warning("Ответ дублируется, не отправляется повторно.")
-                return
+        # Защита от повторов: сравниваем с последним отправленным ответом ассистента
+        last_assistant_msg = next((m["content"].strip() for m in reversed(user_histories[user_id]) if m["role"] == "assistant"), None)
+        if last_assistant_msg and answer == last_assistant_msg:
+            logger.warning("Ответ дублируется, не отправляется повторно.")
+            return
 
         user_histories[user_id].append({"role": "assistant", "content": answer})
 
@@ -608,9 +605,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 disable_web_page_preview=True
             )
         else:
-            formatted_answer = format_gpt_answer(answer)
+            # Для обычных ответов — отправляем как Markdown, без HTML-преобразований
             await update.message.reply_text(
-                formatted_answer,
+                answer,
                 parse_mode='Markdown',
                 disable_web_page_preview=True
             )
