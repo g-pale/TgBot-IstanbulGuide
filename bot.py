@@ -128,6 +128,18 @@ def chunk_text(text: str, max_len: int = 1000):
         chunks.append(current.strip())
     return chunks
 
+def clean_markdown_formatting(text: str) -> str:
+    """
+    Очищает текст от проблемных Markdown-символов, которые Telegram может не обработать.
+    """
+    # Убираем ### заголовки и заменяем на жирный текст
+    text = re.sub(r'^#{1,6}\s*(.+)$', r'**\1**', text, flags=re.MULTILINE)
+    
+    # Убираем лишние переносы строк
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text.strip()
+
 def split_into_telegram_chunks(text: str, limit: int = 3500) -> list:
     """
     Безопасно делит длинный текст на части для Telegram (лимит ~4096 символов).
@@ -631,7 +643,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     disable_web_page_preview=True
                 )
         else:
-            for part in split_into_telegram_chunks(answer, limit=3500):
+            # Очищаем от проблемных Markdown-символов для обычных ответов
+            cleaned_answer = clean_markdown_formatting(answer)
+            for part in split_into_telegram_chunks(cleaned_answer, limit=3500):
                 await update.message.reply_text(
                     part,
                     parse_mode='Markdown',
