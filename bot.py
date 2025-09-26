@@ -351,17 +351,21 @@ def clean_answer(text):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    keyboard = [
-        [
-            InlineKeyboardButton("🗺 Маршруты", callback_data="routes"),
-            InlineKeyboardButton("🏛 Достопримечательности", callback_data="sights")
-        ],
-        [
-            InlineKeyboardButton("🍽 Рестораны", callback_data="restaurants"),
-            InlineKeyboardButton("ℹ️ Помощь", callback_data="help")
-        ]
+    
+    # Постоянное меню (ReplyKeyboardMarkup) - кнопки внизу экрана
+    reply_keyboard = [
+        ["🗺 Маршруты", "🏛 Достопримечательности"],
+        ["🍽 Рестораны", "ℹ️ Помощь"],
+        ["📄 Новый диалог", "⚙️ Настройки"]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = ReplyKeyboardMarkup(
+        reply_keyboard, 
+        resize_keyboard=True, 
+        one_time_keyboard=False,
+        input_field_placeholder="Выберите действие или задайте вопрос..."
+    )
+    
+    # Отправляем одно сообщение с постоянным меню
     await update.message.reply_text(
         f"Привет, {user.first_name}! Я бот-гид по Стамбулу. Выберите, что вас интересует:",
         reply_markup=reply_markup
@@ -547,12 +551,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             disable_web_page_preview=True
         )
 
+def get_persistent_keyboard():
+    """Возвращает постоянную клавиатуру для всех сообщений"""
+    reply_keyboard = [
+        ["🗺 Маршруты", "🏛 Достопримечательности"],
+        ["🍽 Рестораны", "ℹ️ Помощь"],
+        ["📄 Новый диалог", "⚙️ Настройки"]
+    ]
+    return ReplyKeyboardMarkup(
+        reply_keyboard, 
+        resize_keyboard=True, 
+        one_time_keyboard=False,
+        input_field_placeholder="Выберите действие или задайте вопрос..."
+    )
+
+def create_context_menu(is_istanbul_related: bool):
+    """Создаёт контекстное меню после ответа"""
+    if is_istanbul_related:
+        keyboard = [
+            [
+                InlineKeyboardButton("👍 Понятно", callback_data="ok"),
+                InlineKeyboardButton("❓ Уточнить", callback_data="clarify")
+            ],
+            [
+                InlineKeyboardButton("🗺 Маршрут", callback_data="route_1"),
+                InlineKeyboardButton("🏛 Места", callback_data="sights")
+            ],
+            [InlineKeyboardButton("🔄 Новый вопрос", callback_data="new_question")]
+        ]
+    else:
+        keyboard = [
+            [
+                InlineKeyboardButton("👍 Понятно", callback_data="ok"),
+                InlineKeyboardButton("❓ Уточнить", callback_data="clarify")
+            ],
+            [InlineKeyboardButton("🔄 Новый вопрос", callback_data="new_question")]
+        ]
+    return InlineKeyboardMarkup(keyboard)
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "Я понимаю команды:\n"
         "/start - Запустить бота\n"
         "/help - Показать справку\n"
-        "Просто отправьте мне сообщение, и я отвечу текстом и голосом."
+        "Просто отправьте мне сообщение, и я отвечу текстом и голосом.",
+        reply_markup=get_persistent_keyboard()
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -569,10 +612,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif text == "📄 Новый диалог":
         user_histories[user_id].clear()
-        await update.message.reply_text("Новый диалог начат! Можете задать свой вопрос.")
+        await update.message.reply_text(
+            "Новый диалог начат! Можете задать свой вопрос.",
+            reply_markup=get_persistent_keyboard()
+        )
         return
     elif text == "⚙️ Настройки":
-        await update.message.reply_text("Настройки пока недоступны. В будущем здесь появятся дополнительные опции.")
+        await update.message.reply_text(
+            "Настройки пока недоступны. В будущем здесь появятся дополнительные опции.",
+            reply_markup=get_persistent_keyboard()
+        )
+        return
+    elif text == "🗺 Маршруты":
+        # Показываем маршрут на 1 день
+        await route_command(update, context)
+        return
+    elif text == "🏛 Достопримечательности":
+        await update.message.reply_text(
+            "Укажите район: Султанахмет, Галата, Беязит, Бешикташ, Вефа, Эминоню",
+            reply_markup=get_persistent_keyboard()
+        )
+        return
+    elif text == "🍽 Рестораны":
+        await update.message.reply_text(
+            "Укажите район: Султанахмет, Бейоглу, Каракёй, Эминоню, Кадыкёй, Нишанташи, Бешикташ",
+            reply_markup=get_persistent_keyboard()
+        )
         return
 
     # Проверка на запрос погоды
