@@ -624,8 +624,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     elif text == "🗺 Маршруты":
-        # Показываем маршрут на 1 день
-        await route_command(update, context)
+        # Показываем inline-меню выбора длительности маршрута
+        keyboard = [
+            [
+                InlineKeyboardButton("1 день", callback_data="route_1"),
+                InlineKeyboardButton("2 дня", callback_data="route_2"),
+                InlineKeyboardButton("3 дня", callback_data="route_3"),
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "Выберите длительность маршрута:",
+            reply_markup=reply_markup,
+        )
         return
     elif text == "🏛 Достопримечательности":
         await update.message.reply_text(
