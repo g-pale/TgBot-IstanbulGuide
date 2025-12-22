@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Пути к локальной и серверной версиям
-LOCAL_DIR="~/projects/telegram_bot"
+# ВАЖНО: используем абсолютный путь, т.к. rsync не расширяет ~ сам
+LOCAL_DIR="/Users/sergejsaburkin/projects/telegram_bot"
 SERVER_DIR="/var/www/telegram_bot"
 
 # Функция для синхронизации с сервера на локальную машину
@@ -24,7 +25,7 @@ restart_bot() {
             kill \$(cat bot.pid) 2>/dev/null || true; \
             rm bot.pid; \
         fi; \
-        nohup python3 bot.py > bot.log 2>&1 & \
+        nohup venv/bin/python bot.py > bot.log 2>&1 & \
         echo \$! > bot.pid"
     echo "Бот перезапущен. Проверьте логи: ssh selectel 'tail -f $SERVER_DIR/bot.log'"
 }

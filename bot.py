@@ -105,7 +105,10 @@ DEFAULT_PROMPT_TEMPLATE = """
 💡 В конце можешь добавить совет или интересный факт.
 """.strip()
 
-OPENWEATHER_API_KEY = "79b333a6fa52cf366d5437b7ecff03c3"
+# OpenWeather API key
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+if not OPENWEATHER_API_KEY:
+    logger.warning("OPENWEATHER_API_KEY не задан в переменных окружения. Функция погоды будет недоступна.")
 
 # Глобальный словарь для истории сообщений (user_id -> deque)
 user_histories = defaultdict(lambda: deque(maxlen=10))  # храним последние 10 сообщений
@@ -187,36 +190,87 @@ def city_locative(city):
     }
     return locative.get(city, city)
 
+CITY_ENGLISH = {
+    "Москва": "Moscow",
+    "Санкт-Петербург": "Saint Petersburg",
+    "Екатеринбург": "Yekaterinburg",
+    "Новосибирск": "Novosibirsk",
+    "Казань": "Kazan",
+    "Нижний Новгород": "Nizhny Novgorod",
+    "Ростов-на-Дону": "Rostov-on-Don",
+    "Самара": "Samara",
+    "Омск": "Omsk",
+    "Челябинск": "Chelyabinsk",
+    "Уфа": "Ufa",
+    "Красноярск": "Krasnoyarsk",
+    "Воронеж": "Voronezh",
+    "Пермь": "Perm",
+    "Волгоград": "Volgograd",
+    "Стамбул": "Istanbul",
+}
+
 def get_weather(city: str):
-    url = f"https://api.openweathermap.org/data/2.5/weather"
-    params = {
-        "q": city,
-        "appid": OPENWEATHER_API_KEY,
-        "units": "metric",
-        "lang": "ru"
-    }
-    try:
-        response = requests.get(url, params=params, timeout=5)
-        data = response.json()
-        logger.info(f"DEBUG: city={city}, response={data}")
-        if data.get("cod") != 200:
-            return None
-        temp = data["main"]["temp"]
-        desc = data["weather"][0]["description"]
-        return f"Сейчас в {city_locative(city)} {temp}°C, {desc}."
-    except Exception as e:
-        return None
+    """
+    Получает текущую погоду. Сначала пробует русское название города,
+    если не находит — делает повторную попытку с английским написанием.
+    """
+    for query in [city, CITY_ENGLISH.get(city)]:
+        if not query:
+            continue
+        try:
+            geo_url = "http://api.openweathermap.org/geo/1.0/direct"
+            geo_params = {"q": query, "limit": 1, "appid": OPENWEATHER_API_KEY}
+            geo_resp = requests.get(geo_url, params=geo_params, timeout=5)
+            geo_data = geo_resp.json()
+            logger.info(f"WEATHER_GEO DEBUG: city={city}, query={query}, response={geo_data}")
+            if not geo_data:
+                continue
+            lat, lon = geo_data[0]["lat"], geo_data[0]["lon"]
+
+            url = "https://api.openweathermap.org/data/2.5/weather"
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "appid": OPENWEATHER_API_KEY,
+                "units": "metric",
+                "lang": "ru",
+            }
+            response = requests.get(url, params=params, timeout=5)
+            data = response.json()
+            logger.info(f"WEATHER DEBUG: city={city}, query={query}, response={data}")
+
+            if data.get("cod") != 200:
+                continue
+
+            temp = data["main"]["temp"]
+            desc = data["weather"][0]["description"]
+            return f"Сейчас в {city_locative(city)} {temp}°C, {desc}."
+        except Exception:
+            continue
+    return None
 
 def get_weather_forecast(city: str, days: int = 3):
     api_key = OPENWEATHER_API_KEY
-    # 1. Получаем координаты города
-    geo_url = "http://api.openweathermap.org/geo/1.0/direct"
-    geo_params = {"q": city, "limit": 1, "appid": api_key}
-    geo_resp = requests.get(geo_url, params=geo_params, timeout=5)
-    geo_data = geo_resp.json()
-    if not geo_data:
+    # 1. Получаем координаты города (с fallback на английское написание)
+    lat = lon = None
+    for query in [city, CITY_ENGLISH.get(city)]:
+        if not query:
+            continue
+        try:
+            geo_url = "http://api.openweathermap.org/geo/1.0/direct"
+            geo_params = {"q": query, "limit": 1, "appid": api_key}
+            geo_resp = requests.get(geo_url, params=geo_params, timeout=5)
+            geo_data = geo_resp.json()
+            logger.info(f"FORECAST_GEO DEBUG: city={city}, query={query}, response={geo_data}")
+            if not geo_data:
+                continue
+            lat, lon = geo_data[0]["lat"], geo_data[0]["lon"]
+            break
+        except Exception:
+            continue
+
+    if lat is None or lon is None:
         return None
-    lat, lon = geo_data[0]["lat"], geo_data[0]["lon"]
 
     # 2. Получаем прогноз
     forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
@@ -691,7 +745,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-3.5-turbo-0613",
+            model="openai/gpt-4o-mini",
             messages=messages,
             temperature=0.7,
             max_tokens=600
