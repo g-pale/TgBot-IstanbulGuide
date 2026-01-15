@@ -7,9 +7,10 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboard
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from openai import OpenAI
 from dotenv import load_dotenv
-import requests
+import aiohttp
 import re
 from collections import defaultdict, deque
+from datetime import datetime
 
 # Глобальная переменная для базы
 ISTANBUL_DATA = {}
@@ -22,6 +23,16 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Инициализация морфологического анализатора для русского языка
+try:
+    import pymorphy2
+    morph = pymorphy2.MorphAnalyzer()
+    MORPH_AVAILABLE = True
+except ImportError:
+    morph = None
+    MORPH_AVAILABLE = False
+    logger.warning("pymorphy2 не установлен, нормализация городов будет ограниченной")
 
 # Bot token and OpenRouter API key
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -168,191 +179,172 @@ def split_into_telegram_chunks(text: str, limit: int = 3500) -> list:
 
     return parts
 
-def city_locative(city):
-    locative = {
-        "Москва": "Москве",
-        "Санкт-Петербург": "Санкт-Петербурге",
-        "Екатеринбург": "Екатеринбурге",
-        "Новосибирск": "Новосибирске",
-        "Казань": "Казани",
-        "Нижний Новгород": "Нижнем Новгороде",
-        "Ростов-на-Дону": "Ростове-на-Дону",
-        "Самара": "Самаре",
-        "Омск": "Омске",
-        "Челябинск": "Челябинске",
-        "Уфа": "Уфе",
-        "Красноярск": "Красноярске",
-        "Воронеж": "Воронеже",
-        "Пермь": "Перми",
-        "Волгоград": "Волгограде",
-        "Стамбул": "Стамбуле",
-        "Istanbul": "Istanbul"
-    }
-    return locative.get(city, city)
-
-CITY_ENGLISH = {
-    "Москва": "Moscow",
-    "Санкт-Петербург": "Saint Petersburg",
-    "Екатеринбург": "Yekaterinburg",
-    "Новосибирск": "Novosibirsk",
-    "Казань": "Kazan",
-    "Нижний Новгород": "Nizhny Novgorod",
-    "Ростов-на-Дону": "Rostov-on-Don",
-    "Самара": "Samara",
-    "Омск": "Omsk",
-    "Челябинск": "Chelyabinsk",
-    "Уфа": "Ufa",
-    "Красноярск": "Krasnoyarsk",
-    "Воронеж": "Voronezh",
-    "Пермь": "Perm",
-    "Волгоград": "Volgograd",
-    "Стамбул": "Istanbul",
-}
-
-def get_weather(city: str):
+async def get_weather(city: str) -> str | None:
     """
-    Получает текущую погоду. Сначала пробует русское название города,
-    если не находит — делает повторную попытку с английским написанием.
+    Получает текущую погоду для города (async версия с aiohttp).
+    Упрощённая версия - прямой запрос по названию города.
     """
-    for query in [city, CITY_ENGLISH.get(city)]:
-        if not query:
-            continue
-        try:
-            geo_url = "http://api.openweathermap.org/geo/1.0/direct"
-            geo_params = {"q": query, "limit": 1, "appid": OPENWEATHER_API_KEY}
-            geo_resp = requests.get(geo_url, params=geo_params, timeout=5)
-            geo_data = geo_resp.json()
-            logger.info(f"WEATHER_GEO DEBUG: city={city}, query={query}, response={geo_data}")
-            if not geo_data:
-                continue
-            lat, lon = geo_data[0]["lat"], geo_data[0]["lon"]
-
-            url = "https://api.openweathermap.org/data/2.5/weather"
-            params = {
-                "lat": lat,
-                "lon": lon,
-                "appid": OPENWEATHER_API_KEY,
-                "units": "metric",
-                "lang": "ru",
-            }
-            response = requests.get(url, params=params, timeout=5)
-            data = response.json()
-            logger.info(f"WEATHER DEBUG: city={city}, query={query}, response={data}")
-
-            if data.get("cod") != 200:
-                continue
-
-            temp = data["main"]["temp"]
-            desc = data["weather"][0]["description"]
-            return f"Сейчас в {city_locative(city)} {temp}°C, {desc}."
-        except Exception:
-            continue
-    return None
-
-def get_weather_forecast(city: str, days: int = 3):
-    api_key = OPENWEATHER_API_KEY
-    # 1. Получаем координаты города (с fallback на английское написание)
-    lat = lon = None
-    for query in [city, CITY_ENGLISH.get(city)]:
-        if not query:
-            continue
-        try:
-            geo_url = "http://api.openweathermap.org/geo/1.0/direct"
-            geo_params = {"q": query, "limit": 1, "appid": api_key}
-            geo_resp = requests.get(geo_url, params=geo_params, timeout=5)
-            geo_data = geo_resp.json()
-            logger.info(f"FORECAST_GEO DEBUG: city={city}, query={query}, response={geo_data}")
-            if not geo_data:
-                continue
-            lat, lon = geo_data[0]["lat"], geo_data[0]["lon"]
-            break
-        except Exception:
-            continue
-
-    if lat is None or lon is None:
+    if not OPENWEATHER_API_KEY:
+        logger.warning("OPENWEATHER_API_KEY не задан")
         return None
-
-    # 2. Получаем прогноз
-    forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
-    forecast_params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": api_key,
+    
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "q": city,
+        "appid": OPENWEATHER_API_KEY,
         "units": "metric",
         "lang": "ru"
     }
-    resp = requests.get(forecast_url, params=forecast_params, timeout=5)
-    data = resp.json()
-    if "list" not in data:
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    temp = data["main"]["temp"]
+                    desc = data["weather"][0]["description"]
+                    return f"Сейчас в {city} {temp}°C, {desc}."
+                else:
+                    logger.warning(f"Weather API error: status={response.status}, city={city}")
+                    return None
+    except aiohttp.ClientError as e:
+        logger.error(f"Ошибка при запросе погоды для {city}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при получении погоды для {city}: {e}")
         return None
 
-    from datetime import datetime
-    from collections import defaultdict
-
-    days_data = defaultdict(list)
-    for entry in data["list"]:
-        date = datetime.fromtimestamp(entry["dt"]).strftime("%Y-%m-%d")
-        days_data[date].append(entry)
-
-    result = []
-    for i, (date, entries) in enumerate(days_data.items()):
-        if i >= days:
-            break
-        temps = [e["main"]["temp"] for e in entries]
-        desc = entries[0]["weather"][0]["description"]
-        avg_temp = sum(temps) / len(temps)
-        result.append(f"{date}: {avg_temp:.1f}°C, {desc}")
-
-    return "\n".join(result)
+async def get_weather_forecast(city: str, days: int = 3) -> str | None:
+    """
+    Получает прогноз погоды на несколько дней (async версия).
+    """
+    if not OPENWEATHER_API_KEY:
+        logger.warning("OPENWEATHER_API_KEY не задан")
+        return None
+    
+    url = "https://api.openweathermap.org/data/2.5/forecast"
+    params = {
+        "q": city,
+        "appid": OPENWEATHER_API_KEY,
+        "units": "metric",
+        "lang": "ru"
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                if response.status != 200:
+                    logger.warning(f"Forecast API error: status={response.status}, city={city}")
+                    return None
+                
+                data = await response.json()
+                if "list" not in data:
+                    return None
+                
+                # Группируем по дням
+                days_data = defaultdict(list)
+                for entry in data["list"]:
+                    date = datetime.fromtimestamp(entry["dt"]).strftime("%Y-%m-%d")
+                    days_data[date].append(entry)
+                
+                result = []
+                for i, (date, entries) in enumerate(sorted(days_data.items())):
+                    if i >= days:
+                        break
+                    temps = [e["main"]["temp"] for e in entries]
+                    desc = entries[0]["weather"][0]["description"]
+                    avg_temp = sum(temps) / len(temps)
+                    result.append(f"{date}: {avg_temp:.1f}°C, {desc}")
+                
+                return "\n".join(result) if result else None
+                
+    except aiohttp.ClientError as e:
+        logger.error(f"Ошибка при запросе прогноза для {city}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при получении прогноза для {city}: {e}")
+        return None
 
 def normalize_city(city):
-    city = city.strip().lower()
-    if city in ["москва", "москве"]:
-        return "Москва"
-    if city in ["стамбул", "стамбуле"]:
-        return "Стамбул"
-    if city in ["istanbul"]:
-        return "Istanbul"
-    if city in ["санкт-петербург", "санкт-петербурге", "питер", "питере"]:
-        return "Санкт-Петербург"
-    if city in ["екатеринбург", "екатеринбурге"]:
-        return "Екатеринбург"
-    if city in ["новосибирск", "новосибирске"]:
-        return "Новосибирск"
-    if city in ["казань", "казани"]:
-        return "Казань"
-    if city in ["нижний новгород", "нижнем новгороде"]:
-        return "Нижний Новгород"
-    if city in ["ростов-на-дону", "ростове-на-дону"]:
-        return "Ростов-на-Дону"
-    if city in ["самара", "самаре"]:
-        return "Самара"
-    if city in ["омск", "омске"]:
-        return "Омск"
-    if city in ["челябинск", "челябинске"]:
-        return "Челябинск"
-    if city in ["уфа", "уфе"]:
-        return "Уфа"
-    if city in ["красноярск", "красноярске"]:
-        return "Красноярск"
-    if city in ["воронеж", "воронеже"]:
-        return "Воронеж"
-    if city in ["пермь", "перми"]:
-        return "Пермь"
-    if city in ["волгоград", "волгограде"]:
-        return "Волгоград"
-    # Для английских названий и остальных городов
+    """
+    Нормализует название города: приводит к именительному падежу используя pymorphy2.
+    Универсальное решение без перечисления всех городов.
+    """
+    city = city.strip()
+    if not city:
+        return city
+    
+    # Небольшой словарь только для специальных случаев (многословные, иностранные)
+    special_cases = {
+        "нижнем": "Нижний Новгород",
+        "нижнем новгороде": "Нижний Новгород",
+        "нижний новгород": "Нижний Новгород",
+        "санкт-петербурге": "Санкт-Петербург",
+        "санкт-петербург": "Санкт-Петербург",
+        "питере": "Санкт-Петербург",
+        "питер": "Санкт-Петербург",
+        "ростове-на-дону": "Ростов-на-Дону",
+        "ростов-на-дону": "Ростов-на-Дону",
+        # Иностранные города (только самые популярные)
+        "нью-йорке": "New York",
+        "мюнхене": "Munich",
+        "лондоне": "London",
+        "париже": "Paris",
+        "берлине": "Berlin",
+        "варшаве": "Warsaw",
+        "барселоне": "Barcelona",
+        "istanbul": "Istanbul",
+        "стамбуле": "Istanbul",
+        "стамбул": "Istanbul",
+    }
+    
+    city_lower = city.lower()
+    if city_lower in special_cases:
+        return special_cases[city_lower]
+    
+    # Для русского языка используем pymorphy2 для приведения к именительному падежу
+    if MORPH_AVAILABLE and any(ord(c) >= 0x0400 and ord(c) <= 0x04FF for c in city):
+        # Это кириллица - используем морфологический анализ
+        words = city.split()
+        normalized_words = []
+        
+        for word in words:
+            # Пропускаем дефисы и предлоги
+            if word.lower() in ['на', 'в', 'по', 'для', '-']:
+                continue
+            # Приводим к нормальной форме (именительный падеж)
+            parsed = morph.parse(word)[0]
+            normal_form = parsed.normal_form
+            # Сохраняем капитализацию первого символа
+            if word[0].isupper():
+                normal_form = normal_form.capitalize()
+            normalized_words.append(normal_form)
+        
+        if normalized_words:
+            return ' '.join(normalized_words)
+    
+    # Для неизвестных городов или если pymorphy2 недоступен - возвращаем с заглавной буквы
     return city.title()
 
 def extract_city(raw_city):
-    # Если в строке есть 'в <город>', берём последнее слово после 'в'
-    match = re.search(r'в\s+([а-яА-Яa-zA-ZёЁ\- ]+)', raw_city, re.IGNORECASE)
+    """
+    Извлекает название города из текста запроса.
+    Поддерживает многословные названия городов.
+    """
+    # Паттерн для поиска "в <город>" или "по <город>" или "для <город>"
+    # Захватываем всё до конца строки или до следующего ключевого слова
+    match = re.search(r'(?:в|по|для)\s+([а-яА-Яa-zA-ZёЁ\- ]+?)(?:\s|$|,|\.|\?|!)', raw_city, re.IGNORECASE)
     if match:
-        return match.group(1).strip()
-    # Если строка состоит из нескольких слов, берём последнее
+        city = match.group(1).strip()
+        # Убираем лишние слова в конце (если есть)
+        city = re.sub(r'\s+(сегодня|завтра|сейчас|погода|температура).*$', '', city, flags=re.IGNORECASE)
+        if city:
+            return city
+    # Если паттерн не сработал, пробуем взять последние 1-3 слова
     words = raw_city.strip().split()
-    if len(words) > 1:
-        return words[-1]
+    if len(words) >= 2:
+        # Берём последние 2-3 слова (для многословных городов)
+        return ' '.join(words[-2:]) if len(words) >= 2 else words[-1]
     return raw_city.strip()
 
 def format_gpt_answer(text):
@@ -410,7 +402,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply_keyboard = [
         ["🗺 Маршруты", "🏛 Достопримечательности"],
         ["🍽 Рестораны", "ℹ️ Помощь"],
-        ["📄 Новый диалог", "⚙️ Настройки"]
+        ["📄 Новый диалог", "🌍 Погода"]
     ]
     reply_markup = ReplyKeyboardMarkup(
         reply_keyboard, 
@@ -610,7 +602,7 @@ def get_persistent_keyboard():
     reply_keyboard = [
         ["🗺 Маршруты", "🏛 Достопримечательности"],
         ["🍽 Рестораны", "ℹ️ Помощь"],
-        ["📄 Новый диалог", "⚙️ Настройки"]
+        ["📄 Новый диалог", "🌍 Погода"]
     ]
     return ReplyKeyboardMarkup(
         reply_keyboard, 
@@ -671,9 +663,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_persistent_keyboard()
         )
         return
-    elif text == "⚙️ Настройки":
+    elif text == "🌍 Погода":
         await update.message.reply_text(
-            "Настройки пока недоступны. В будущем здесь появятся дополнительные опции.",
+            "🌍 Укажите название города для получения информации о погоде.\n\n"
+            "Например:\n"
+            "• Погода в Москве\n"
+            "• Температура в Санкт-Петербурге\n"
+            "• Прогноз погоды в Стамбуле на 3 дня",
             reply_markup=get_persistent_keyboard()
         )
         return
@@ -707,17 +703,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Проверка на запрос погоды
-    match = re.search(r'(температура|погода|прогноз).*(в|по|для)\s*([а-яА-Яa-zA-Z\- ]+)', text, re.IGNORECASE)
+    # Улучшенное регулярное выражение: захватываем весь город до конца строки или до знаков препинания
+    match = re.search(r'(температура|погода|прогноз).*?(?:в|по|для)\s+([а-яА-Яa-zA-ZёЁ\- ]+?)(?:\s|$|,|\.|\?|!|на\s+3|на\s+три)', text, re.IGNORECASE)
     if match:
-        city = normalize_city(extract_city(match.group(3)))
+        raw_city = match.group(2).strip()
+        # Убираем лишние слова в конце
+        raw_city = re.sub(r'\s+(сегодня|завтра|сейчас|погода|температура|прогноз).*$', '', raw_city, flags=re.IGNORECASE)
+        # Нормализуем город (приводим к именительному падежу)
+        city = normalize_city(raw_city)
+        logger.info(f"WEATHER_REQUEST: raw_city={raw_city}, normalized_city={city}")
         if re.search(r'(на\s*3\s*дня|на\s*три\s*дня|прогноз)', text, re.IGNORECASE):
-            forecast = get_weather_forecast(city, days=3)
+            forecast = await get_weather_forecast(city, days=3)
             if forecast:
                 await update.message.reply_text(f"Прогноз погоды в {city} на ближайшие 3 дня:\n{forecast}")
             else:
                 await update.message.reply_text("Не удалось получить прогноз погоды. Проверьте название города.")
             return
-        weather = get_weather(city)
+        weather = await get_weather(city)
         if weather:
             await update.message.reply_text(weather)
         else:

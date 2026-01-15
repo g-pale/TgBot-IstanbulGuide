@@ -2,3 +2,5 @@ python-telegram-bot==20.3
 openai>=1.0
 python-dotenv>=1.0
 pyyaml
+aiohttp>=3.9.0
+pymorphy2>=0.9.1
