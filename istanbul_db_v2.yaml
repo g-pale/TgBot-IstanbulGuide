@@ -1,0 +1,426 @@
+version: 2.0
+meta:
+  city: "Istanbul"
+  language: "ru"
+  generated_on: "2026-01-16"
+  policy:
+    - "Только проверяемые факты. Для всего спорного/волатильного: ссылка на официальный источник + пометка 'check_before_visit'."
+    - "Не хранить точные цены/тарифы без официального источника; предпочтительно хранить URL, где бот/человек может проверить актуальность."
+
+# Рекомендуемые первичные источники для регулярной проверки
+source_hubs:
+  - id: sehir_hatlari
+    name: "Şehir Hatları (муниципальные паромы)"
+    url: "https://www.sehirhatlari.istanbul"
+    trust: "A"
+  - id: muze_gen
+    name: "muze.gen.tr (официальный портал музеев/билетов Турции)"
+    url: "https://muze.gen.tr"
+    trust: "A"
+  - id: michelin_guide
+    name: "MICHELIN Guide"
+    url: "https://guide.michelin.com"
+    trust: "A"
+  - id: uskudar_municipality
+    name: "Üsküdar Belediyesi (муниципалитет Ускюдара)"
+    url: "https://www.uskudar.bel.tr"
+    trust: "A"
+  - id: istanbulkart
+    name: "Istanbulkart (официальный сайт)"
+    url: "https://www.istanbulkart.istanbul"
+    trust: "A"
+
+transport:
+  istanbulkart:
+    card_fee_tl: 165
+    check_before_visit: true
+    notes:
+      - "Стоимость поездок/тарифы меняются. Держите в базе ссылки на официальные тарифы, а не фиксированное число."
+    sources:
+      - name: "Istanbulkart — Price & Limits"
+        url: "https://www.istanbulkart.istanbul/price-limit"
+        last_verified: "2026-01-16"
+
+# -----------------------------
+# Достопримечательности и районы
+# -----------------------------
+places:
+  - id: hagia_sophia
+    name_ru: "Айя-София (Ayasofya-i Kebir Camii)"
+    district: "Фатих"
+    area: "Султанахмет"
+    category: "мечеть/памятник"
+    time_needed_min: 60
+    highlights:
+      - "Ключевой памятник византийской и османской истории."
+      - "Лучше приходить утром; часть зон может быть закрыта во время молитв."
+    visiting:
+      hours: "09:00–19:30 (может меняться)"
+      closures: "закрывается для туристов на время молитв"
+      check_before_visit: true
+    tags: ["архитектура", "история", "византийская", "османская"]
+    sources:
+      - name: "EBA / Okul Dışı Öğrenme — Ayasofya Cami (часы посещения)"
+        url: "https://okuldisiogrenme.eba.gov.tr/place-detail/ayasofya-cami-2034"
+        last_verified: "2026-01-16"
+      - name: "muze.gen.tr — Hagia Sophia (описание)"
+        url: "https://muze.gen.tr/muze-detay/ayasofya"
+        last_verified: "2026-01-16"
+      - name: "Официальный сайт Ayasofya Camii"
+        url: "https://www.ayasofyacamii.gov.tr/"
+        last_verified: "2026-01-16"
+
+  - id: blue_mosque
+    name_ru: "Голубая мечеть (Sultanahmet Camii)"
+    district: "Фатих"
+    area: "Султанахмет"
+    category: "мечеть"
+    time_needed_min: 45
+    highlights:
+      - "Действующая мечеть; закрывается для посетителей на время молитв."
+      - "Бесплатный вход; соблюдайте дресс-код."
+    visiting:
+      hours: "ежедневно; посещение ограничено во время молитв"
+      check_before_visit: true
+    tags: ["архитектура", "османская", "интерьер", "must-see"]
+    sources:
+      - name: "Sultanahmet Camii — Official Visitor Guide"
+        url: "https://www.sultanahmetcami.org/en/visitor-information"
+        last_verified: "2026-01-16"
+
+  - id: suleymaniye_mosque
+    name_ru: "Мечеть Сулеймание (Süleymaniye Camii)"
+    district: "Фатих"
+    area: "Сулеймание"
+    category: "мечеть"
+    time_needed_min: 45
+    highlights:
+      - "Шедевр архитектора Синана (XVI век)."
+      - "Обычно спокойнее, чем Султанахмет."
+    visiting:
+      hours: "действующая мечеть; посещение лучше планировать вне времени молитв"
+      check_before_visit: true
+    tags: ["архитектура", "история", "османская", "виды"]
+    sources:
+      - name: "Fatih Kaymakamlığı — Süleymaniye Camii"
+        url: "https://www.fatih.gov.tr/suleymaniye-camii"
+        last_verified: "2026-01-16"
+
+  - id: basilica_cistern
+    name_ru: "Цистерна Базилика (Yerebatan Sarnıcı)"
+    district: "Фатих"
+    area: "Султанахмет"
+    category: "музей"
+    time_needed_min: 45
+    highlights:
+      - "Атмосферный подземный памятник византийской эпохи; 336 колонн и знаменитые головы Медузы."
+      - "Прохладно и влажно: удобная обувь и лёгкая накидка делают визит комфортнее."
+    visiting:
+      hours: "09:00–18:30 и 19:30–23:50 (см. официальный сайт)"
+      check_before_visit: true
+    tags: ["история", "архитектура", "византийская", "фото"]
+    sources:
+      - name: "Yerebatan Sarnıcı — Tickets & Visiting Hours"
+        url: "https://www.yerebatan.com/en/tickets"
+        last_verified: "2026-01-16"
+
+  - id: topkapi_palace
+    name_ru: "Дворец Топкапы (Topkapı Sarayı)"
+    district: "Фатих"
+    area: "Султанахмет"
+    category: "дворец/музей"
+    time_needed_min: 150
+    highlights:
+      - "Резиденция османских султанов; сокровищница, дворы, виды на Босфор."
+      - "Гарем — отдельный билет/секция; планируйте минимум 2–3 часа."
+    visiting:
+      hours: "см. официальный источник"
+      check_before_visit: true
+    tags: ["история", "османская", "музей", "must-see"]
+    sources:
+      - name: "muze.gen.tr — Topkapı Sarayı"
+        url: "https://muze.gen.tr/muze-detay/topkapi"
+        last_verified: "2026-01-16"
+
+  - id: dolmabahce_palace
+    name_ru: "Дворец Долмабахче (Dolmabahçe Sarayı)"
+    district: "Бешикташ"
+    area: "Долмабахче / Вишнезаде"
+    category: "дворец/музей"
+    time_needed_min: 120
+    highlights:
+      - "Дворец XIX века на Босфоре; посещение обычно по маршруту/секции."
+      - "Часто ограничения на фото внутри — уточняйте на месте/на сайте."
+    visiting:
+      hours: "09:00–17:30 (закрыт по понедельникам; см. сайт)"
+      check_before_visit: true
+    tags: ["архитектура", "история", "интерьер", "музей"]
+    sources:
+      - name: "Dolmabahçe Palace — Plan Your Visit (часы/дни)"
+        url: "https://dolmabahcepalace.com.tr/plan-your-visit/"
+        last_verified: "2026-01-16"
+
+  - id: galata_tower
+    name_ru: "Галатская башня (Galata Kulesi)"
+    district: "Бейоглу"
+    area: "Галата"
+    category: "обзорная площадка/музей"
+    time_needed_min: 60
+    highlights:
+      - "Одна из лучших панорам на Золотой Рог и пролив."
+      - "Лучше идти к открытию или ближе к закату, но учитывайте очереди."
+    visiting:
+      check_before_visit: true
+    tags: ["панорама", "фото", "Бейоглу"]
+    sources:
+      - name: "muze.gen.tr — Galata Tower"
+        url: "https://muze.gen.tr/muze-detay/galata"
+        last_verified: "2026-01-16"
+
+  - id: istiklal
+    name_ru: "Улица Истикляль (İstiklal Caddesi)"
+    district: "Бейоглу"
+    area: "Таксим–Тюнель"
+    category: "улица/район"
+    time_needed_min: 120
+    highlights:
+      - "Главная пешеходная улица: кафе, магазины, пассажи, уличная жизнь."
+      - "Лучшие впечатления — вечером; боковые улицы часто интереснее самой магистрали."
+    tags: ["городская жизнь", "шопинг", "кафе", "прогулка"]
+
+  - id: karakoy
+    name_ru: "Каракёй (Karaköy)"
+    district: "Бейоглу"
+    category: "район"
+    time_needed_min: 120
+    highlights:
+      - "Еда, кофейни, быстрый выход к Галате и набережной."
+    tags: ["еда", "кофе", "прогулка", "порт"]
+
+  - id: kadikoy_moda
+    name_ru: "Кадыкёй и Мода (Kadıköy/Moda)"
+    district: "Кадыкёй"
+    category: "район"
+    time_needed_min: 240
+    highlights:
+      - "Более местный Стамбул: рынки, бары, набережная Моды."
+      - "Идеально сочетать с паромом как частью маршрута."
+    tags: ["азиатская сторона", "еда", "рынок", "набережная"]
+
+  - id: uskudar_salacak
+    name_ru: "Ускюдар и Саладжак (Üsküdar/Salacak)"
+    district: "Ускюдар"
+    category: "район/набережная"
+    time_needed_min: 150
+    highlights:
+      - "Классический вид на Девичью башню и исторический полуостров."
+      - "Лучшее время — закат."
+    tags: ["азиатская сторона", "виды", "закат", "фото"]
+
+# -----------------------------
+# Еда: рестораны и кафе
+# -----------------------------
+food:
+  - id: mikla
+    name: "Mikla"
+    district: "Бейоглу"
+    cuisine: "современная анатолийская"
+    price_level: "₺₺₺"
+    booking: "обязательно"
+    tags: ["вид", "высокая кухня", "особый случай"]
+    sources:
+      - name: "MICHELIN Guide — Mikla"
+        url: "https://guide.michelin.com/en/istanbul-province/istanbul/restaurant/mikla"
+        last_verified: "2026-01-16"
+
+  - id: karakoy_lokantasi
+    name: "Karaköy Lokantası"
+    district: "Бейоглу"
+    cuisine: "турецкая/мезе"
+    price_level: "₺₺"
+    booking: "желательно вечером"
+    tags: ["мезе", "ужин", "стильный интерьер"]
+    sources:
+      - name: "MICHELIN Guide — Karaköy Lokantası"
+        url: "https://guide.michelin.com/en/istanbul-province/istanbul/restaurant/karakoy-lokantasi"
+        last_verified: "2026-01-16"
+
+  - id: aheste
+    name: "Aheste"
+    district: "Бейоглу"
+    cuisine: "современные мезе/турецкая"
+    price_level: "₺₺"
+    booking: "желательно"
+    tags: ["мезе", "уютно", "гастрономия"]
+    sources:
+      - name: "MICHELIN Guide — Aheste"
+        url: "https://guide.michelin.com/en/istanbul-province/istanbul/restaurant/aheste"
+        last_verified: "2026-01-16"
+
+  - id: haci_abdullah
+    name: "Hacı Abdullah"
+    district: "Бейоглу"
+    cuisine: "османская/турецкая классика"
+    price_level: "₺₺"
+    booking: "желательно"
+    tags: ["историческое место", "семейный", "классика"]
+    sources:
+      - name: "Hacı Abdullah — About (основан в 1888)"
+        url: "https://www.haciabdullah.com/about"
+        last_verified: "2026-01-16"
+
+  - id: ciya_sofrasi
+    name: "Çiya Sofrası"
+    district: "Кадыкёй"
+    cuisine: "анатолийская/региональная"
+    price_level: "₺₺"
+    booking: "обычно можно без брони"
+    tags: ["местный опыт", "азиатская сторона", "разнообразие"]
+    sources:
+      - name: "Çiya — официальный сайт"
+        url: "https://www.ciya.com.tr/"
+        last_verified: "2026-01-16"
+
+  - id: karakoy_gulluoglu
+    name: "Karaköy Güllüoğlu"
+    district: "Бейоглу"
+    cuisine: "десерты/баклава"
+    price_level: "₺₺"
+    booking: "не требуется"
+    tags: ["баклава", "быстрый стоп", "сладкое"]
+    sources:
+      - name: "Karaköy Güllüoğlu — About Us"
+        url: "https://www.karakoygulluoglu.com/en/about-us"
+        last_verified: "2026-01-16"
+
+  # Муниципальная сеть Nevmekân (Üsküdar)
+  - id: nevmekan_sahil
+    name: "Nevmekân Sahil"
+    district: "Ускюдар"
+    cuisine: "кафе/завтраки"
+    price_level: "₺"
+    booking: "не требуется"
+    tags: ["библиотека", "бюджетно", "вид на Босфор", "работа/учёба"]
+    sources:
+      - name: "Üsküdar Belediyesi — Nevmekan Sahil (адрес/контакты)"
+        url: "https://tesislerimiz.uskudar.bel.tr/tr/main/tesislerimiz/restaurantlar/5/nevmekan-sahil/14"
+        last_verified: "2026-01-16"
+      - name: "Üsküdar Belediyesi — Nevmekan Sahil Kütüphanesi (книжный фонд)"
+        url: "https://www.uskudar.bel.tr/tr/main/pages/nevmekan-sahil-kutuphanesi/659"
+        last_verified: "2026-01-16"
+
+  - id: nevmekan_baglarbasi
+    name: "Nevmekân Bağlarbaşı"
+    district: "Ускюдар"
+    cuisine: "кафе/домашняя"
+    price_level: "₺"
+    booking: "не требуется"
+    tags: ["библиотека", "тихо", "работа/учёба"]
+    sources:
+      - name: "Üsküdar Belediyesi — Nevmekan Bağlarbaşı (описание)"
+        url: "https://www.uskudar.bel.tr/tr/main/pages/nevmekan-baglarbasi/411"
+        last_verified: "2026-01-16"
+      - name: "Üsküdar Belediyesi — Nevmekan Bağlarbaşı (адрес/контакты)"
+        url: "https://tesislerimiz.uskudar.bel.tr/tr/main/pages/nevmekan-baglarbasi/155"
+        last_verified: "2026-01-16"
+
+  - id: nevmekan_selimiye
+    name: "Nevmekân Selimiye"
+    district: "Ускюдар"
+    cuisine: "кафе/завтраки"
+    price_level: "₺"
+    booking: "не требуется"
+    tags: ["историческое здание", "библиотека", "спокойно"]
+    sources:
+      - name: "Üsküdar Belediyesi — Nevmekân Selimiye (история/фонд)"
+        url: "https://www.uskudar.bel.tr/tr/main/pages/nevmekan-selimiye/552"
+        last_verified: "2026-01-16"
+      - name: "Üsküdar Belediyesi — Nevmekan Selimiye (страница объекта)"
+        url: "https://tesislerimiz.uskudar.bel.tr/tr/main/pages/nevmekan-selimiye/156"
+        last_verified: "2026-01-16"
+
+  - id: nevmekan_kuzguncuk
+    name: "Nevmekân Kuzguncuk"
+    district: "Ускюдар"
+    cuisine: "кафе/завтраки"
+    price_level: "₺"
+    booking: "не требуется"
+    tags: ["Кузгунджук", "атмосферно", "библиотека", "сад"]
+    sources:
+      - name: "Üsküdar Belediyesi — Nevmekan Kuzguncuk (страница объекта)"
+        url: "https://tesislerimiz.uskudar.bel.tr/tr/main/pages/nevmekan-kuzguncuk/175"
+        last_verified: "2026-01-16"
+      - name: "Üsküdar Belediyesi — Nevmekân Kuzguncuk (проект)"
+        url: "https://www.uskudar.bel.tr/tr/main/proje/sosyal-projelerimiz/21/nevmekn-kuzguncuk/340"
+        last_verified: "2026-01-16"
+
+# -----------------------------
+# Шаблоны маршрутов (бот собирает их из places/food)
+# -----------------------------
+route_templates:
+  - id: classic_1d_old_city
+    title: "1 день — классика исторического центра"
+    audience: ["первый раз", "must-see"]
+    logic:
+      - "Минимизируем переезды: всё пешком/трамвай T1."
+      - "Ставим самые загруженные точки утром."
+    steps:
+      - time_block: "Утро"
+        stop_ids: ["hagia_sophia", "blue_mosque"]
+        notes: ["Приходите к началу окна посещения; учитывайте молитвы и дресс-код."]
+      - time_block: "День"
+        stop_ids: ["basilica_cistern", "topkapi_palace"]
+        notes: ["Если мало времени — выбирайте одно из двух; если есть 3+ часа — оба."]
+      - time_block: "Поздний день"
+        stop_ids: ["karakoy"]
+        food_ids: ["karakoy_gulluoglu"]
+        notes: ["Перейти/доехать до Каракёя, десерт, прогулка по набережной."]
+      - time_block: "Вечер"
+        food_ids: ["karakoy_lokantasi"]
+        notes: ["Ужин. При желании — короткий паром/набережная вместо дальних переездов."]
+
+  - id: two_days_old_city_plus_beyoglu
+    title: "2 дня — Старый город + Бейоглу"
+    audience: ["первый раз", "сбалансировано"]
+    steps:
+      - day: 1
+        time_block: "Утро–день"
+        stop_ids: ["hagia_sophia", "blue_mosque", "topkapi_palace"]
+      - day: 1
+        time_block: "Вечер"
+        stop_ids: ["karakoy"]
+        food_ids: ["karakoy_lokantasi"]
+      - day: 2
+        time_block: "Утро"
+        stop_ids: ["galata_tower", "istiklal"]
+        food_ids: ["haci_abdullah"]
+      - day: 2
+        time_block: "Вечер"
+        food_ids: ["mikla"]
+        notes: ["Бронь обязательна. Альтернатива: Aheste."]
+
+  - id: three_days_with_asia
+    title: "3 дня — Классика + азиатская сторона"
+    audience: ["хочу больше местного", "без спешки"]
+    steps:
+      - day: 1
+        time_block: "Султанахмет"
+        stop_ids: ["hagia_sophia", "blue_mosque", "basilica_cistern"]
+      - day: 2
+        time_block: "Бейоглу"
+        stop_ids: ["galata_tower", "istiklal"]
+        food_ids: ["aheste", "karakoy_gulluoglu"]
+      - day: 3
+        time_block: "Азиатская сторона"
+        stop_ids: ["kadikoy_moda", "uskudar_salacak"]
+        food_ids: ["ciya_sofrasi", "nevmekan_sahil"]
+        notes:
+          - "Закат лучше ловить на Саладжак/Ускюдар."
+
+# -----------------------------
+# Дополнительно: полезные ссылки
+# -----------------------------
+useful_links:
+  - topic: "Короткий круиз по Босфору (Şehir Hatları)"
+    url: "https://www.sehirhatlari.istanbul/en/timetables/bosphorus-tours/short-bosphorus-tour-91"
+    last_verified: "2026-01-16"
